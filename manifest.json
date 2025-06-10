@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Extension Jurisprudence - Extracteur universel",
+  "version": "2.0",
+  "description": "Extraction et import automatique de jurisprudence depuis Légifrance, Curia, ArianeWeb et autres sites juridiques",
+  "permissions": [
+    "activeTab"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.legifrance.gouv.fr/ceta/id/*",
+        "https://www.legifrance.gouv.fr/juri/id/*",
+        "https://www.legifrance.gouv.fr/constit/id/*",
+        "https://www.legifrance.gouv.fr/jufi/id/*"
+      ],
+      "js": [
+        "utils/dom-helpers.js",
+        "utils/clipboard.js",
+        "ui/notifications.js",
+        "core/ris-generator.js",
+        "core/zotero-integration.js",
+        "extractors/base-extractor.js",
+        "extractors/legifrance-extractor.js",
+        "ui/buttons.js",
+        "content.js"
+      ],
+      "css": ["styles.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}
