@@ -29,7 +29,7 @@ window.RISGenerator = {
         
         // Numéro de l'arrêt
         if (metadata.number) {
-            ris += `RP  - ${metadata.number}\n`;
+            ris += `A2  - ${metadata.number}\n`;
         }
         
         // URL
