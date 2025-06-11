@@ -1,5 +1,19 @@
 // Générateur de fichiers RIS
 window.RISGenerator = {
+
+    // Générer un RIS de base
+    generateBasicRIS() {
+        const metadata = this.extractMetadata();
+        if (!metadata) return null;
+        
+        // Vérifier si c'est un extracteur spécialisé avec sa propre méthode
+        if (this.siteName === "Curia" && window.RISGenerator.generateCuriaRIS) {
+            return window.RISGenerator.generateCuriaRIS(metadata);
+        }
+        
+        // Sinon utiliser la méthode générique
+        return window.RISGenerator.generateBasic(metadata);
+    },
     
     // Générer un RIS de base avec métadonnées seulement
     generateBasic(metadata) {

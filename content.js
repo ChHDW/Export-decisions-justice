@@ -42,14 +42,8 @@ console.log("🚀 Extension Jurisprudence chargée !", window.location.href);
                 // Continue quand même, certains champs peuvent être optionnels
             }
 
-            // Initialiser l'interface utilisateur
-            const uiSuccess = await initializeUI();
-            if (!uiSuccess) {
-                return false;
-            }
-
             isInitialized = true;
-            console.log("🎉 Extension initialisée avec succès !");
+            console.log("🎉 Extension initialisée avec succès ! Popup disponible via l'icône d'extension.");
             return true;
 
         } catch (error) {
@@ -68,42 +62,17 @@ console.log("🚀 Extension Jurisprudence chargée !", window.location.href);
             return new window.LegifranceExtractor();
         }
         
+        // Curia (CJUE)
+        if (url.includes("curia.europa.eu")) {
+            return new window.CuriaExtractor();
+        }
+        
         // Futurs sites à ajouter :
-        // if (url.includes("curia.europa.eu")) {
-        //     return new window.CuriaExtractor();
-        // }
         // if (url.includes("arianeweb")) {
         //     return new window.ArianeWebExtractor();
         // }
         
         return null;
-    }
-
-    // Initialiser l'interface utilisateur
-    async function initializeUI() {
-        let retries = 0;
-        
-        while (retries < APP_CONFIG.maxRetries) {
-            try {
-                const success = await window.ButtonManager.initialize(currentExtractor);
-                if (success) {
-                    return true;
-                }
-                
-                retries++;
-                if (retries < APP_CONFIG.maxRetries) {
-                    console.log(`⏳ Tentative ${retries}/${APP_CONFIG.maxRetries} échouée, nouvelle tentative dans ${APP_CONFIG.retryDelay}ms`);
-                    await new Promise(resolve => setTimeout(resolve, APP_CONFIG.retryDelay));
-                }
-                
-            } catch (error) {
-                console.error(`❌ Erreur lors de la tentative ${retries + 1}:`, error);
-                retries++;
-            }
-        }
-        
-        console.error("❌ Échec de l'initialisation de l'UI après toutes les tentatives");
-        return false;
     }
 
     // Afficher une erreur d'initialisation à l'utilisateur
@@ -170,12 +139,151 @@ console.log("🚀 Extension Jurisprudence chargée !", window.location.href);
         }
     };
 
+    // Système de communication avec la popup
+    function setupMessageListener() {
+        chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+            handlePopupMessage(request, sendResponse);
+            return true; // Garde la connexion ouverte pour les réponses asynchrones
+        });
+    }
+
+    // Gestionnaire de messages depuis la popup
+    async function handlePopupMessage(request, sendResponse) {
+        try {
+            switch (request.action) {
+                case "checkCompatibility":
+                    const compatibilityInfo = {
+                        compatible: isInitialized && currentExtractor && currentExtractor.isCompatible,
+                        siteName: currentExtractor ? currentExtractor.siteName : null,
+                        url: window.location.href
+                    };
+                    sendResponse(compatibilityInfo);
+                    break;
+
+                case "copyDecision":
+                    const decisionResult = await handleCopyDecision();
+                    sendResponse(decisionResult);
+                    break;
+
+                case "copyAnalysis":
+                    const analysisResult = await handleCopyAnalysis();
+                    sendResponse(analysisResult);
+                    break;
+
+                case "copyRis":
+                    const risResult = await handleCopyRIS();
+                    sendResponse(risResult);
+                    break;
+
+                case "importComplete":
+                    const importResult = await handleImportComplete();
+                    sendResponse(importResult);
+                    break;
+
+                default:
+                    sendResponse({ success: false, message: "Action non reconnue" });
+            }
+        } catch (error) {
+            console.error("Erreur lors du traitement du message:", error);
+            sendResponse({ success: false, message: "Erreur interne" });
+        }
+    }
+
+    // Gestionnaires d'actions pour la popup
+    async function handleCopyDecision() {
+        if (!currentExtractor) {
+            return { success: false, message: "Extracteur non disponible" };
+        }
+
+        const text = currentExtractor.extractDecisionText();
+        const formattedText = currentExtractor.formatDecisionText(text);
+        
+        if (formattedText) {
+            const success = await window.ClipboardManager.copy(formattedText);
+            return {
+                success: success,
+                message: success ? "Arrêt copié !" : "Erreur de copie"
+            };
+        } else {
+            return { success: false, message: "Impossible d'extraire l'arrêt" };
+        }
+    }
+
+    async function handleCopyAnalysis() {
+        if (!currentExtractor) {
+            return { success: false, message: "Extracteur non disponible" };
+        }
+
+        const text = currentExtractor.extractAnalysis();
+        
+        if (text) {
+            const success = await window.ClipboardManager.copy(text);
+            return {
+                success: success,
+                message: success ? "Analyse copiée !" : "Erreur de copie"
+            };
+        } else {
+            return { success: false, message: "Impossible d'extraire l'analyse" };
+        }
+    }
+
+    async function handleCopyRIS() {
+        if (!currentExtractor) {
+            return { success: false, message: "Extracteur non disponible" };
+        }
+
+        const ris = currentExtractor.generateBasicRIS();
+        
+        if (ris) {
+            const success = await window.ClipboardManager.copy(ris);
+            return {
+                success: success,
+                message: success ? "RIS copié !" : "Erreur de copie"
+            };
+        } else {
+            return { success: false, message: "Impossible de générer le RIS" };
+        }
+    }
+
+    async function handleImportComplete() {
+        if (!currentExtractor) {
+            return { success: false, message: "Extracteur non disponible" };
+        }
+
+        const risComplete = currentExtractor.generateCompleteRIS();
+        
+        if (!risComplete) {
+            return { success: false, message: "Impossible de générer le RIS complet" };
+        }
+
+        // Tentative d'import Zotero avec fallback vers copie
+        const result = await window.ZoteroIntegration.importWithConfirmation(risComplete);
+        
+        if (result.action === "copy" || (result.action === "imported" && !result.success)) {
+            // Fallback: copier dans le presse-papiers
+            const copySuccess = await window.ClipboardManager.copy(risComplete);
+            return {
+                success: copySuccess,
+                message: copySuccess ? result.message : "Erreur d'import et de copie"
+            };
+        } else {
+            // Import réussi ou annulé
+            return {
+                success: result.success || result.action === "cancelled",
+                message: result.message
+            };
+        }
+    }
+
     // Fonction de démarrage principal
     function startup() {
         console.log("🚀 Démarrage de l'extension...");
         
         // Configurer la détection des changements de page
         setupPageChangeDetection();
+        
+        // Configurer l'écoute des messages depuis la popup
+        setupMessageListener();
         
         // Démarrer l'initialisation
         if (document.readyState === "loading") {
