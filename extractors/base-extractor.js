@@ -36,6 +36,12 @@ window.BaseExtractor = class {
 
         let text = rawText;
         
+        // Si c'est un arrêt CJUE (détecté par certains mots-clés), utiliser le formatage spécialisé
+        if (this.siteName === "Curia" || text.includes("ARRÊT DE LA COUR") || text.includes("CJUE")) {
+            return this.formatCJUEDecisionText(text);
+        }
+        
+        // Formatage standard pour autres juridictions
         // Améliorer la structure du texte
         text = text.replace(/;\s*\n/g, ";\n\n"); // Sauts après points-virgules
         text = text.replace(/:\s*\n/g, ":\n\n"); // Sauts après deux-points
@@ -45,6 +51,51 @@ window.BaseExtractor = class {
         text = text.replace(/PAR CES MOTIFS/g, "\n\n$&"); // Séparer les motifs
         
         return window.DOMHelpers.cleanText(text);
+    }
+
+    // Formatage spécialisé pour les arrêts CJUE
+    formatCJUEDecisionText(rawText) {
+        if (!rawText) return null;
+
+        let text = rawText;
+        
+        // Préserver les titres importants des arrêts CJUE
+        text = text.replace(/ARRÊT DE LA COUR/g, "\n\nARRÊT DE LA COUR");
+        text = text.replace(/ORDONNANCE DE LA COUR/g, "\n\nORDONNANCE DE LA COUR");
+        
+        // Préserver la structure des considérants
+        text = text.replace(/considérant/gi, "\nconsidérant");
+        
+        // Préserver la structure des points numérotés (spécifique EUR-Lex)
+        text = text.replace(/(\n|^)(\d+)\s+/g, "\n\n$2.\t");
+        
+        // Préserver les énumérations avec tirets
+        text = text.replace(/–\s+/g, "\n–\t");
+        
+        // Améliorer la structure des paragraphes juridiques
+        text = text.replace(/:\s*\n/g, ":\n\n");
+        text = text.replace(/;\s*\n/g, ";\n\n");
+        
+        // Préserver les citations d'articles
+        text = text.replace(/Article\s+\d+/g, "\n$&");
+        text = text.replace(/L'article\s+\d+/g, "\n$&");
+        
+        // Préserver les motifs de décision
+        text = text.replace(/PAR CES MOTIFS/g, "\n\nPAR CES MOTIFS");
+        text = text.replace(/DECIDE|DÉCIDE/g, "\n\n$&");
+        
+        // Préserver les signatures
+        text = text.replace(/Signatures?/g, "\n\n$&");
+        
+        // Préserver les subdivisions importantes
+        text = text.replace(/(Le cadre juridique|Le litige au principal|Sur les questions préjudicielles|Sur les dépens)/g, "\n\n$1");
+        
+        // Nettoyer les espaces multiples mais préserver la structure
+        text = text.replace(/\n\n\n+/g, '\n\n');
+        text = text.replace(/[ \t]+/g, ' ');
+        text = text.trim();
+        
+        return text;
     }
 
     // Extraire la date au format standardisé
@@ -102,42 +153,27 @@ window.BaseExtractor = class {
 
     // Générer un RIS de base
     generateBasicRIS() {
-    const metadata = this.extractMetadata();
-    if (!metadata) return null;
-    
-    // Utiliser le générateur spécialisé pour Curia s'il existe
-    if (this.siteName === "Curia" && window.RISGenerator.generateCuriaRIS) {
-        return window.RISGenerator.generateCuriaRIS(metadata);
+        const metadata = this.extractMetadata();
+        if (!metadata) return null;
+        
+        return window.RISGenerator.generateBasic(metadata);
     }
-    
-    // Pour Légifrance et autres sites : titre vide
-    const options = {
-        fillTitle: this.siteName !== "Légifrance" // false pour Légifrance, true pour autres
-    };
-    
-    return window.RISGenerator.generateBasic(metadata, options);
-}
 
-// Générer un RIS complet
-generateCompleteRIS() {
-    const metadata = this.extractMetadata();
-    const decisionText = this.extractDecisionText();
-    const analysisText = this.extractAnalysis();
-    
-    if (!metadata) return null;
-    
-    const content = {
-        decisionText: this.formatDecisionText(decisionText),
-        analysisText
-    };
-    
-    // Options selon le site
-    const options = {
-        fillTitle: this.siteName !== "Légifrance" // false pour Légifrance
-    };
-    
-    return window.RISGenerator.generateComplete(metadata, content, options);
-}
+    // Générer un RIS complet
+    generateCompleteRIS() {
+        const metadata = this.extractMetadata();
+        const decisionText = this.extractDecisionText();
+        const analysisText = this.extractAnalysis();
+        
+        if (!metadata) return null;
+        
+        const content = {
+            decisionText: this.formatDecisionText(decisionText),
+            analysisText
+        };
+        
+        return window.RISGenerator.generateComplete(metadata, content);
+    }
 
     // Vérifier que toutes les données essentielles sont présentes
     validateExtraction() {
