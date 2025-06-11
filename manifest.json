@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Extension Jurisprudence - Extracteur universel",
-  "version": "2.1.3",
+  "version": "2.2.4",
   "description": "Extraction et import automatique de jurisprudence depuis Légifrance, Curia (CJUE), ArianeWeb et autres sites juridiques",
   "permissions": [
     "activeTab"

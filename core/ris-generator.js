@@ -1,27 +1,24 @@
-// Générateur de fichiers RIS
+// Générateur de fichiers RIS - Version corrigée
 window.RISGenerator = {
 
-    // Générer un RIS de base
-    generateBasicRIS() {
-        const metadata = this.extractMetadata();
-        if (!metadata) return null;
-        
-        // Vérifier si c'est un extracteur spécialisé avec sa propre méthode
-        if (this.siteName === "Curia" && window.RISGenerator.generateCuriaRIS) {
-            return window.RISGenerator.generateCuriaRIS(metadata);
-        }
-        
-        // Sinon utiliser la méthode générique
-        return window.RISGenerator.generateBasic(metadata);
-    },
-    
     // Générer un RIS de base avec métadonnées seulement
-    generateBasic(metadata) {
+    generateBasic(metadata, options = {}) {
         let ris = "";
         ris += "TY  - CASE\n";
         
-        // Titre (vide par défaut pour saisie manuelle)
-        ris += "TI  - \n";
+        // Titre - comportement différent selon le site
+        if (options.fillTitle === false || metadata.site === "Légifrance") {
+            // Pour Légifrance : titre toujours vide
+            ris += "TI  - \n";
+        } else if (metadata.caseName) {
+            ris += `TI  - ${metadata.caseName}\n`;
+        } else if (metadata.fullTitle) {
+            ris += `TI  - ${metadata.fullTitle}\n`;
+        } else if (metadata.title) {
+            ris += `TI  - ${metadata.title}\n`;
+        } else {
+            ris += "TI  - \n"; // Vide pour saisie manuelle
+        }
         
         // Auteur (vide par défaut)
         ris += "AU  - \n";
@@ -31,8 +28,10 @@ window.RISGenerator = {
             ris += `PB  - ${metadata.court}\n`;
         }
         
-        // Date
-        if (metadata.date) {
+        // Date - utiliser dateRIS si disponible, sinon date normale
+        if (metadata.dateRIS) {
+            ris += `DA  - ${metadata.dateRIS}\n`;
+        } else if (metadata.date) {
             ris += `DA  - ${metadata.date}\n`;
         }
         
@@ -46,6 +45,11 @@ window.RISGenerator = {
             ris += `A2  - ${metadata.number}\n`;
         }
         
+        // ECLI si disponible
+        if (metadata.ecli) {
+            ris += `M1  - ${metadata.ecli}\n`;
+        }
+        
         // URL
         if (metadata.url) {
             ris += `UR  - ${metadata.url}\n`;
@@ -57,8 +61,8 @@ window.RISGenerator = {
     },
 
     // Générer un RIS complet avec contenu
-    generateComplete(metadata, content = {}) {
-        let ris = this.generateBasic(metadata);
+    generateComplete(metadata, content = {}, options = {}) {
+        let ris = this.generateBasic(metadata, options);
         
         // Retirer la ligne de fin pour ajouter du contenu
         ris = ris.replace("ER  - \n", "");
@@ -74,13 +78,80 @@ window.RISGenerator = {
         }
         
         // Ajouter d'autres contenus si présents
-        if (content.additionalNotes) {
+        /*if (content.additionalNotes) {
             content.additionalNotes.forEach(note => {
                 ris += `N1  - ${note}\n`;
             });
-        }
+        }*/
         
         // Remettre la ligne de fin
+        ris += "ER  - \n";
+        
+        return ris;
+    },
+
+    // Générer un RIS spécialisé pour Curia (avec titre toujours rempli)
+    generateCuriaRIS(metadata) {
+        let ris = "";
+        ris += "TY  - CASE\n";
+        
+        // Titre - priorité à caseName pour Curia (toujours rempli)
+        if (metadata.caseName) {
+            ris += `TI  - ${metadata.caseName}\n`;
+        } else if (metadata.decisionTitle) {
+            ris += `TI  - ${metadata.decisionTitle}\n`;
+        } else if (metadata.fullTitle) {
+            // Extraire juste le nom du cas depuis fullTitle
+            const titleParts = metadata.fullTitle.split(" - ");
+            if (titleParts.length >= 2) {
+                ris += `TI  - ${titleParts[1].trim()}\n`;
+            } else {
+                ris += `TI  - ${metadata.fullTitle}\n`;
+            }
+        } else {
+            ris += "TI  - \n";
+        }
+        
+        // Auteur (vide par défaut)
+        ris += "AU  - \n";
+        
+        // Juridiction
+        if (metadata.court) {
+            ris += `PB  - ${metadata.court}\n`;
+        }
+        
+        // Date au format RIS
+        if (metadata.dateRIS) {
+            ris += `DA  - ${metadata.dateRIS}\n`;
+        } else if (metadata.date) {
+            ris += `DA  - ${metadata.date}\n`;
+        }
+        
+        // Année
+        if (metadata.year) {
+            ris += `PY  - ${metadata.year}\n`;
+        }
+        
+        // Numéro d'affaire
+        if (metadata.number) {
+            ris += `A2  - ${metadata.number}\n`;
+        }
+        
+        // ECLI
+        if (metadata.ecli) {
+            ris += `M1  - ${metadata.ecli}\n`;
+        }
+        
+        // Type de document si disponible
+        if (metadata.documentType) {
+            ris += `N1  - Type: ${metadata.documentType}\n`;
+        }
+        
+        // URL
+        if (metadata.url) {
+            ris += `UR  - ${metadata.url}\n`;
+        }
+        
         ris += "ER  - \n";
         
         return ris;
@@ -125,9 +196,14 @@ window.RISGenerator = {
             return "TA";
         }
         
-        // Conversions spécifiques selon le site
-        if (site === "curia") {
-            // Ajouts futurs pour Curia
+        // Conversions spécifiques pour Curia
+        if (site === "curia" || site === "Curia") {
+            if (court.includes("cjue") || court.includes("cour de justice")) {
+                return "CJUE";
+            }
+            if (court.includes("tribunal") && court.includes("ue")) {
+                return "Trib. UE";
+            }
         }
         
         // Si aucun pattern reconnu, retourner le nom original
@@ -136,7 +212,7 @@ window.RISGenerator = {
 
     // Valider les métadonnées
     validateMetadata(metadata) {
-        const required = ["court", "date", "number"];
+        const required = ["court", "date"];
         const missing = required.filter(field => !metadata[field]);
         
         return {

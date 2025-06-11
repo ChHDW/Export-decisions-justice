@@ -102,27 +102,42 @@ window.BaseExtractor = class {
 
     // Générer un RIS de base
     generateBasicRIS() {
-        const metadata = this.extractMetadata();
-        if (!metadata) return null;
-        
-        return window.RISGenerator.generateBasic(metadata);
+    const metadata = this.extractMetadata();
+    if (!metadata) return null;
+    
+    // Utiliser le générateur spécialisé pour Curia s'il existe
+    if (this.siteName === "Curia" && window.RISGenerator.generateCuriaRIS) {
+        return window.RISGenerator.generateCuriaRIS(metadata);
     }
+    
+    // Pour Légifrance et autres sites : titre vide
+    const options = {
+        fillTitle: this.siteName !== "Légifrance" // false pour Légifrance, true pour autres
+    };
+    
+    return window.RISGenerator.generateBasic(metadata, options);
+}
 
-    // Générer un RIS complet
-    generateCompleteRIS() {
-        const metadata = this.extractMetadata();
-        const decisionText = this.extractDecisionText();
-        const analysisText = this.extractAnalysis();
-        
-        if (!metadata) return null;
-        
-        const content = {
-            decisionText: this.formatDecisionText(decisionText),
-            analysisText
-        };
-        
-        return window.RISGenerator.generateComplete(metadata, content);
-    }
+// Générer un RIS complet
+generateCompleteRIS() {
+    const metadata = this.extractMetadata();
+    const decisionText = this.extractDecisionText();
+    const analysisText = this.extractAnalysis();
+    
+    if (!metadata) return null;
+    
+    const content = {
+        decisionText: this.formatDecisionText(decisionText),
+        analysisText
+    };
+    
+    // Options selon le site
+    const options = {
+        fillTitle: this.siteName !== "Légifrance" // false pour Légifrance
+    };
+    
+    return window.RISGenerator.generateComplete(metadata, content, options);
+}
 
     // Vérifier que toutes les données essentielles sont présentes
     validateExtraction() {
