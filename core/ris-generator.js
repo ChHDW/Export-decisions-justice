@@ -1,23 +1,26 @@
-// Générateur de fichiers RIS mis à jour pour CJUE
+// Générateur de fichiers RIS - Version corrigée
 window.RISGenerator = {
 
     // Générer un RIS de base avec métadonnées seulement
-    generateBasic(metadata) {
+    generateBasic(metadata, options = {}) {
         let ris = "";
         ris += "TY  - CASE\n";
         
-        // Titre - utiliser le nom de l'affaire ou un titre par défaut
-        if (metadata.caseName) {
+        // Titre - comportement différent selon le site
+        if (options.fillTitle === false || metadata.site === "Légifrance") {
+            // Pour Légifrance : titre toujours vide
+            ris += "TI  - \n";
+        } else if (metadata.caseName) {
             ris += `TI  - ${metadata.caseName}\n`;
         } else if (metadata.fullTitle) {
-            // Extraire un titre court du titre complet
-            const shortTitle = this.extractShortTitle(metadata.fullTitle);
-            ris += `TI  - ${shortTitle}\n`;
+            ris += `TI  - ${metadata.fullTitle}\n`;
+        } else if (metadata.title) {
+            ris += `TI  - ${metadata.title}\n`;
         } else {
-            ris += "TI  - \n";
+            ris += "TI  - \n"; // Vide pour saisie manuelle
         }
         
-        // Auteur (vide par défaut pour saisie manuelle)
+        // Auteur (vide par défaut)
         ris += "AU  - \n";
         
         // Juridiction
@@ -25,8 +28,10 @@ window.RISGenerator = {
             ris += `PB  - ${metadata.court}\n`;
         }
         
-        // Date
-        if (metadata.date) {
+        // Date - utiliser dateRIS si disponible, sinon date normale
+        if (metadata.dateRIS) {
+            ris += `DA  - ${metadata.dateRIS}\n`;
+        } else if (metadata.date) {
             ris += `DA  - ${metadata.date}\n`;
         }
         
@@ -38,8 +43,11 @@ window.RISGenerator = {
         // Numéro de l'arrêt
         if (metadata.number) {
             ris += `A2  - ${metadata.number}\n`;
-        } else if (metadata.caseNumber) {
-            ris += `A2  - aff. ${metadata.caseNumber}\n`;
+        }
+        
+        // ECLI si disponible
+        if (metadata.ecli) {
+            ris += `M1  - ${metadata.ecli}\n`;
         }
         
         // URL
@@ -52,42 +60,29 @@ window.RISGenerator = {
         return ris;
     },
 
-    // Extraire un titre court depuis le titre complet
-    extractShortTitle(fullTitle) {
-        // Pour les arrêts CJUE, extraire les parties principales
-        const partiesMatch = fullTitle.match(/([^.]+?)\s+contre\s+([^.]+)/);
-        if (partiesMatch) {
-            return `${partiesMatch[1].trim()} c. ${partiesMatch[2].trim()}`;
-        }
-        
-        // Fallback : prendre les premiers mots
-        const words = fullTitle.split(' ');
-        if (words.length > 10) {
-            return words.slice(0, 10).join(' ') + '...';
-        }
-        
-        return fullTitle;
-    },
-
     // Générer un RIS complet avec contenu
-    generateComplete(metadata, content = {}) {
-        let ris = this.generateBasic(metadata);
+    generateComplete(metadata, content = {}, options = {}) {
+        let ris = this.generateBasic(metadata, options);
         
         // Retirer la ligne de fin pour ajouter du contenu
         ris = ris.replace("ER  - \n", "");
         
         // Ajouter le texte de la décision
         if (content.decisionText) {
-            // Limiter la taille pour éviter les problèmes de mémoire
-            const limitedText = this.limitTextLength(content.decisionText, 50000);
-            ris += `N1  - TEXTE DE LA DECISION:\n${limitedText}\n\n`;
+            ris += `N1  - TEXTE DE LA DECISION:\n${content.decisionText}\n`;
         }
         
         // Ajouter l'analyse
         if (content.analysisText) {
-            const limitedAnalysis = this.limitTextLength(content.analysisText, 10000);
-            ris += `N1  - ANALYSE:\n${limitedAnalysis}\n\n`;
+            ris += `N1  - ANALYSE:\n${content.analysisText}\n`;
         }
+        
+        // Ajouter d'autres contenus si présents
+        /*if (content.additionalNotes) {
+            content.additionalNotes.forEach(note => {
+                ris += `N1  - ${note}\n`;
+            });
+        }*/
         
         // Remettre la ligne de fin
         ris += "ER  - \n";
@@ -95,21 +90,71 @@ window.RISGenerator = {
         return ris;
     },
 
-    // Limiter la longueur du texte pour éviter les problèmes
-    limitTextLength(text, maxLength) {
-        if (!text || text.length <= maxLength) {
-            return text;
+    // Générer un RIS spécialisé pour Curia (avec titre toujours rempli)
+    generateCuriaRIS(metadata) {
+        let ris = "";
+        ris += "TY  - CASE\n";
+        
+        // Titre - priorité à caseName pour Curia (toujours rempli)
+        if (metadata.caseName) {
+            ris += `TI  - ${metadata.caseName}\n`;
+        } else if (metadata.decisionTitle) {
+            ris += `TI  - ${metadata.decisionTitle}\n`;
+        } else if (metadata.fullTitle) {
+            // Extraire juste le nom du cas depuis fullTitle
+            const titleParts = metadata.fullTitle.split(" - ");
+            if (titleParts.length >= 2) {
+                ris += `TI  - ${titleParts[1].trim()}\n`;
+            } else {
+                ris += `TI  - ${metadata.fullTitle}\n`;
+            }
+        } else {
+            ris += "TI  - \n";
         }
         
-        // Couper au dernier espace avant la limite pour éviter de couper au milieu d'un mot
-        const truncated = text.substring(0, maxLength);
-        const lastSpace = truncated.lastIndexOf(' ');
+        // Auteur (vide par défaut)
+        ris += "AU  - \n";
         
-        if (lastSpace > maxLength * 0.8) { // Si l'espace est assez proche de la fin
-            return truncated.substring(0, lastSpace) + "\n\n[TEXTE TRONQUÉ - LIMITE DE TAILLE ATTEINTE]";
+        // Juridiction
+        if (metadata.court) {
+            ris += `PB  - ${metadata.court}\n`;
         }
         
-        return truncated + "\n\n[TEXTE TRONQUÉ - LIMITE DE TAILLE ATTEINTE]";
+        // Date au format RIS
+        if (metadata.dateRIS) {
+            ris += `DA  - ${metadata.dateRIS}\n`;
+        } else if (metadata.date) {
+            ris += `DA  - ${metadata.date}\n`;
+        }
+        
+        // Année
+        if (metadata.year) {
+            ris += `PY  - ${metadata.year}\n`;
+        }
+        
+        // Numéro d'affaire
+        if (metadata.number) {
+            ris += `A2  - ${metadata.number}\n`;
+        }
+        
+        // ECLI
+        if (metadata.ecli) {
+            ris += `M1  - ${metadata.ecli}\n`;
+        }
+        
+        // Type de document si disponible
+        if (metadata.documentType) {
+            ris += `N1  - Type: ${metadata.documentType}\n`;
+        }
+        
+        // URL
+        if (metadata.url) {
+            ris += `UR  - ${metadata.url}\n`;
+        }
+        
+        ris += "ER  - \n";
+        
+        return ris;
     },
 
     // Convertir les noms de juridictions en format standardisé
@@ -151,16 +196,13 @@ window.RISGenerator = {
             return "TA";
         }
         
-        // Conversions spécifiques pour les juridictions européennes
-        if (site === "curia" || site === "eur-lex") {
+        // Conversions spécifiques pour Curia
+        if (site === "curia" || site === "Curia") {
             if (court.includes("cjue") || court.includes("cour de justice")) {
                 return "CJUE";
             }
             if (court.includes("tribunal") && court.includes("ue")) {
                 return "Trib. UE";
-            }
-            if (court.includes("tribunal") && court.includes("fonction")) {
-                return "Trib. fonction publique UE";
             }
         }
         
@@ -184,55 +226,5 @@ window.RISGenerator = {
         return new Blob([risContent], { 
             type: "application/x-research-info-systems" 
         });
-    },
-
-    // Générer un RIS spécifique pour Curia/EUR-Lex
-    generateCuriaRIS(metadata) {
-        let ris = "";
-        ris += "TY  - CASE\n";
-        
-        // Titre de l'affaire
-        if (metadata.caseName) {
-            ris += `TI  - ${metadata.caseName}\n`;
-        } else {
-            ris += "TI  - \n";
-        }
-        
-        // Auteur (vide par défaut)
-        ris += "AU  - \n";
-        
-        // Juridiction européenne
-        if (metadata.court) {
-            ris += `PB  - ${metadata.court}\n`;
-        }
-        
-        // Date
-        if (metadata.date) {
-            ris += `DA  - ${metadata.date}\n`;
-        }
-        
-        // Année
-        if (metadata.year) {
-            ris += `PY  - ${metadata.year}\n`;
-        }
-        
-        // Numéro d'affaire
-        if (metadata.caseNumber) {
-            ris += `A2  - aff. ${metadata.caseNumber}\n`;
-        }
-        
-        // ECLI comme identifiant
-        if (metadata.ecli) {
-            ris += `M1  - ${metadata.ecli}\n`;
-        }
-        
-        // URL
-        if (metadata.url) {
-            ris += `UR  - ${metadata.url}\n`;
-        }
-        
-        ris += "ER  - \n";
-        
-        return ris;
     }
 };

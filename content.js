@@ -1,4 +1,4 @@
-// Point d'entrée principal de l'extension - Orchestrateur mis à jour
+// Point d'entrée principal de l'extension - Orchestrateur
 console.log("🚀 Extension Jurisprudence chargée !", window.location.href);
 
 (function() {
@@ -7,7 +7,7 @@ console.log("🚀 Extension Jurisprudence chargée !", window.location.href);
     // Configuration globale
     const APP_CONFIG = {
         name: "Extension Jurisprudence",
-        version: "2.2.0",
+        version: "2.0",
         retryDelay: 2000,
         maxRetries: 3
     };
@@ -62,14 +62,8 @@ console.log("🚀 Extension Jurisprudence chargée !", window.location.href);
             return new window.LegifranceExtractor();
         }
         
-        // Curia (CJUE) - pages de liste
+        // Curia (CJUE)
         if (url.includes("curia.europa.eu")) {
-            return new window.CuriaExtractor();
-        }
-        
-        // EUR-Lex - pages de jurisprudence CJUE
-        if (url.includes("eur-lex.europa.eu") && 
-            (url.includes("CELEX:") && (url.includes("CJ") || url.includes("CC")))) {
             return new window.CuriaExtractor();
         }
         
@@ -201,7 +195,7 @@ console.log("🚀 Extension Jurisprudence chargée !", window.location.href);
             return { success: false, message: "Extracteur non disponible" };
         }
 
-        const text = await currentExtractor.extractDecisionText();
+        const text = currentExtractor.extractDecisionText();
         const formattedText = currentExtractor.formatDecisionText(text);
         
         if (formattedText) {
@@ -220,7 +214,7 @@ console.log("🚀 Extension Jurisprudence chargée !", window.location.href);
             return { success: false, message: "Extracteur non disponible" };
         }
 
-        const text = await currentExtractor.extractAnalysis();
+        const text = currentExtractor.extractAnalysis();
         
         if (text) {
             const success = await window.ClipboardManager.copy(text);
@@ -256,7 +250,7 @@ console.log("🚀 Extension Jurisprudence chargée !", window.location.href);
             return { success: false, message: "Extracteur non disponible" };
         }
 
-        const risComplete = await currentExtractor.generateCompleteRIS();
+        const risComplete = currentExtractor.generateCompleteRIS();
         
         if (!risComplete) {
             return { success: false, message: "Impossible de générer le RIS complet" };
