@@ -1,4 +1,4 @@
-// Extracteur spécifique pour Curia (CJUE) - Version complète avec extraction automatique
+// Extracteur spécifique pour Curia (CJUE) - Version complète avec extraction automatique et URLs
 window.CuriaExtractor = class extends window.BaseExtractor {
     
     constructor() {
@@ -94,6 +94,66 @@ window.CuriaExtractor = class extends window.BaseExtractor {
             return "Trib. fonction publique UE";
         }
         return "Cour UE"; // Fallback générique
+    }
+
+    // Extraire toutes les URLs des documents (version améliorée)
+    extractDocumentUrls() {
+        const urls = {
+            judgment: null,
+            opinion: null,
+            judgmentEurLex: null,
+            opinionEurLex: null
+        };
+
+        try {
+            // Parcourir les lignes du tableau des documents
+            const documentRows = document.querySelectorAll(".table_document_ligne");
+            
+            documentRows.forEach(row => {
+                const cellDoc = row.querySelector(".liste_table_cell_doc");
+                if (!cellDoc) return;
+                
+                const docType = cellDoc.textContent.trim();
+                const cellCuria = row.querySelector(".liste_table_cell_links_curia");
+                const cellEurLex = row.querySelector(".liste_table_cell_links_eurlex");
+                
+                // URL Curia
+                if (cellCuria) {
+                    const curiaLink = cellCuria.querySelector("a[href*='document/document.jsf']");
+                    if (curiaLink) {
+                        let href = curiaLink.getAttribute("href").replace(/&amp;/g, '&');
+                        const absoluteUrl = this.makeAbsoluteUrl(href);
+                        
+                        if (docType.includes("Arrêt")) {
+                            urls.judgment = absoluteUrl;
+                        } else if (docType.includes("Conclusions")) {
+                            urls.opinion = absoluteUrl;
+                        }
+                    }
+                }
+                
+                // URL EUR-Lex
+                if (cellEurLex) {
+                    const eurLexLink = cellEurLex.querySelector("a[href*='eur-lex.europa.eu']");
+                    if (eurLexLink) {
+                        const eurLexUrl = eurLexLink.getAttribute("href");
+                        
+                        if (docType.includes("Arrêt")) {
+                            urls.judgmentEurLex = eurLexUrl;
+                        } else if (docType.includes("Conclusions")) {
+                            urls.opinionEurLex = eurLexUrl;
+                        }
+                    }
+                }
+            });
+            
+            this.log("URLs des documents extraites", urls);
+            return urls;
+            
+        } catch (error) {
+            this.log("Erreur lors de l'extraction des URLs", error);
+            return urls;
+        }
     }
 
     // Extraire les liens vers les documents (pour usage futur)
@@ -278,6 +338,149 @@ window.CuriaExtractor = class extends window.BaseExtractor {
         if (!metadata) return null;
         
         return window.RISGenerator.generateCuriaRIS(metadata);
+    }
+
+    // Générer un RIS complet avec URLs spécifiques pour Curia
+    async generateCompleteRIS() {
+        const metadata = this.extractMetadata();
+        let decisionText = null;
+        let analysisText = null;
+        let opinionText = null;
+        
+        try {
+            // Gérer les extracteurs asynchrones et synchrones
+            const decisionResult = this.extractDecisionText();
+            if (decisionResult && typeof decisionResult.then === 'function') {
+                // Méthode asynchrone
+                decisionText = await decisionResult;
+            } else {
+                // Méthode synchrone
+                decisionText = decisionResult;
+            }
+
+            const analysisResult = this.extractAnalysis();
+            if (analysisResult && typeof analysisResult.then === 'function') {
+                // Méthode asynchrone
+                analysisText = await analysisResult;
+            } else {
+                // Méthode synchrone
+                analysisText = analysisResult;
+            }
+
+            // Pour les conclusions, extraire depuis la page de liste si disponible
+            if (window.location.href.includes("/liste.jsf")) {
+                try {
+                    opinionText = await this._fetchAndExtractOpinions();
+                } catch (error) {
+                    this.log("Erreur lors de l'extraction des conclusions", error);
+                }
+            }
+        } catch (error) {
+            this.log("Erreur lors de l'extraction du contenu pour RIS complet", error);
+        }
+        
+        if (!metadata) return null;
+        
+        // Préparer le contenu avec URLs spécifiques
+        const content = {
+            decisionText: this.formatDecisionText(decisionText),
+            analysisText,
+            opinionText,
+            // Ajouter les URLs spécifiques
+            decisionUrl: metadata.documentUrls?.judgmentEurLex || metadata.documentUrls?.judgment || metadata.url,
+            opinionUrl: metadata.documentUrls?.opinionEurLex || metadata.documentUrls?.opinion
+        };
+        
+        return this._generateCuriaCompleteRISWithUrls(metadata, content);
+    }
+
+    // Générer RIS Curia avec URLs spécifiques
+    _generateCuriaCompleteRISWithUrls(metadata, content) {
+        let ris = "";
+        ris += "TY  - CASE\n";
+        
+        // Titre - toujours rempli pour Curia
+        if (metadata.caseName) {
+            ris += `TI  - ${metadata.caseName}\n`;
+        } else if (metadata.decisionTitle) {
+            ris += `TI  - ${metadata.decisionTitle}\n`;
+        } else if (metadata.fullTitle) {
+            // Extraire juste le nom du cas depuis fullTitle
+            const titleParts = metadata.fullTitle.split(" - ");
+            if (titleParts.length >= 2) {
+                ris += `TI  - ${titleParts[1].trim()}\n`;
+            } else {
+                ris += `TI  - ${metadata.fullTitle}\n`;
+            }
+        } else {
+            ris += "TI  - \n";
+        }
+        
+        // Auteur (vide par défaut)
+        ris += "AU  - \n";
+        
+        // Juridiction
+        if (metadata.court) {
+            ris += `PB  - ${metadata.court}\n`;
+        }
+        
+        // Date au format RIS
+        if (metadata.dateRIS) {
+            ris += `DA  - ${metadata.dateRIS}\n`;
+        } else if (metadata.date) {
+            ris += `DA  - ${metadata.date}\n`;
+        }
+        
+        // Année
+        if (metadata.year) {
+            ris += `PY  - ${metadata.year}\n`;
+        }
+        
+        // Numéro d'affaire
+        if (metadata.number) {
+            ris += `A2  - ${metadata.number}\n`;
+        }
+        
+        // ECLI
+        if (metadata.ecli) {
+            ris += `M1  - ${metadata.ecli}\n`;
+        }
+        
+        // Ajouter le texte de la décision AVEC URL spécifique
+        if (content.decisionText) {
+            ris += `N1  - TEXTE DE LA DECISION:\n`;
+            
+            if (content.decisionUrl) {
+                ris += `${content.decisionUrl}\n`;
+            }
+            
+            ris += `${content.decisionText}\n`;
+        }
+        
+        // Ajouter l'analyse si disponible
+        if (content.analysisText) {
+            ris += `N1  - ANALYSE:\n${content.analysisText}\n`;
+        }
+        
+        // Ajouter les conclusions AVEC URL spécifique
+        if (content.opinionText) {
+            ris += `N1  - CONCLUSIONS DE L'AVOCAT GENERAL:\n`;
+            
+            if (content.opinionUrl) {
+                ris += `${content.opinionUrl}\n`;
+            }
+            
+            ris += `${content.opinionText}\n`;
+        }
+        
+        // URL principale
+        if (metadata.url) {
+            ris += `UR  - ${metadata.url}\n`;
+        }
+        
+        ris += "ER  - \n";
+        
+        return ris;
     }
 
     // Formatage spécialisé pour les arrêts de Curia basé sur les classes CSS
@@ -523,6 +726,14 @@ window.CuriaExtractor = class extends window.BaseExtractor {
             metadata.number = `aff. ${metadata.caseNumber}`;
         }
 
+        // Extraire les URLs spécifiques pour chaque type de document
+        const documentUrls = this.extractDocumentUrls();
+        metadata.documentUrls = documentUrls;
+
+        // URLs Curia pour arrêt et conclusions
+        metadata.curiaJudgmentUrl = documentUrls.judgment;
+        metadata.curiaOpinionUrl = documentUrls.opinion;
+
         // Extraire l'URL EUR-Lex
         metadata.eurLexUrl = this.extractEurLexUrl(metadata.documentType);
         
@@ -530,9 +741,12 @@ window.CuriaExtractor = class extends window.BaseExtractor {
         if (metadata.eurLexUrl) {
             metadata.url = metadata.eurLexUrl;
             metadata.originalCuriaUrl = this.getCurrentUrl();
+        } else if (metadata.curiaJudgmentUrl) {
+            // Fallback vers l'URL Curia de l'arrêt
+            metadata.url = metadata.curiaJudgmentUrl;
         }
 
-        // Extraire les liens vers les documents
+        // Extraire les liens vers les documents (legacy)
         metadata.documentLinks = this.extractDocumentLinks();
 
         this.log("Métadonnées extraites depuis la page de liste", metadata);
@@ -696,7 +910,7 @@ window.CuriaExtractor = class extends window.BaseExtractor {
         }
     }
 
-      // Trouver l'URL de l'arrêt depuis la page de liste
+    // Trouver l'URL de l'arrêt depuis la page de liste
     _findJudgmentUrl() {
         try {
             // Chercher la ligne qui contient "Arrêt" dans le tableau des documents

@@ -1,4 +1,4 @@
-// Générateur de fichiers RIS - Version corrigée
+// Générateur de fichiers RIS - Version complète avec URLs
 window.RISGenerator = {
 
     // Générer un RIS de base avec métadonnées seulement
@@ -60,19 +60,26 @@ window.RISGenerator = {
         return ris;
     },
 
-    // Générer un RIS complet avec contenu
+    // Générer un RIS complet avec contenu et URLs
     generateComplete(metadata, content = {}, options = {}) {
         let ris = this.generateBasic(metadata, options);
         
         // Retirer la ligne de fin pour ajouter du contenu
         ris = ris.replace("ER  - \n", "");
         
-        // Ajouter le texte de la décision
+        // Ajouter le texte de la décision AVEC URL
         if (content.decisionText) {
-            ris += `N1  - TEXTE DE LA DECISION:\n${content.decisionText}\n`;
+            ris += `N1  - TEXTE DE LA DECISION:\n`;
+            
+            // Ajouter l'URL de la décision si disponible
+            if (metadata.url) {
+                ris += `${metadata.url}\n`;
+            }
+            
+            ris += `${content.decisionText}\n`;
         }
         
-        // Ajouter l'analyse
+        // Ajouter l'analyse (sans URL pour l'analyse)
         if (content.analysisText) {
             ris += `N1  - ANALYSE:\n${content.analysisText}\n`;
         }
