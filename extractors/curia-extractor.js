@@ -696,7 +696,7 @@ window.CuriaExtractor = class extends window.BaseExtractor {
         }
     }
 
-    // Trouver l'URL de l'arrêt depuis la page de liste
+      // Trouver l'URL de l'arrêt depuis la page de liste
     _findJudgmentUrl() {
         try {
             // Chercher la ligne qui contient "Arrêt" dans le tableau des documents
@@ -730,6 +730,91 @@ window.CuriaExtractor = class extends window.BaseExtractor {
             
         } catch (error) {
             this.log("Erreur lors de la recherche de l'URL de l'arrêt", error);
+            return null;
+        }
+    }
+
+    // Trouver l'URL des conclusions depuis la page de liste
+    _findOpinionUrl() {
+        try {
+            // Chercher la ligne qui contient "Conclusions" dans le tableau des documents
+            const documentRows = document.querySelectorAll(".table_document_ligne");
+            
+            for (const row of documentRows) {
+                const cellDoc = row.querySelector(".liste_table_cell_doc");
+                if (cellDoc && cellDoc.textContent.includes("Conclusions")) {
+                    // Trouvé la ligne des conclusions, chercher le lien dans la cellule Curia
+                    const cellLinks = row.querySelector(".liste_table_cell_links_curia");
+                    if (cellLinks) {
+                        const link = cellLinks.querySelector("a[href*='document/document.jsf']");
+                        if (link) {
+                            let href = link.getAttribute("href");
+                            
+                            // Convertir les entités HTML (&amp; → &)
+                            href = href.replace(/&amp;/g, '&');
+                            
+                            // Construire l'URL absolue si nécessaire
+                            if (href.startsWith("https://")) {
+                                return href;
+                            } else {
+                                return new URL(href, window.location.origin).href;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            return null;
+            
+        } catch (error) {
+            this.log("Erreur lors de la recherche de l'URL des conclusions", error);
+            return null;
+        }
+    }
+
+    // Récupérer et extraire le texte des conclusions
+    async _fetchAndExtractOpinions() {
+        try {
+            // 1. Trouver le lien vers les conclusions
+            const opinionUrl = this._findOpinionUrl();
+            if (!opinionUrl) {
+                this.log("URL des conclusions non trouvée dans la page de liste");
+                return null;
+            }
+
+            this.log("URL des conclusions trouvée", opinionUrl);
+
+            // 2. Récupérer le contenu de la page des conclusions
+            const response = await fetch(opinionUrl);
+            if (!response.ok) {
+                this.log("Erreur lors de la récupération de la page des conclusions", response.status);
+                return null;
+            }
+
+            const htmlText = await response.text();
+            
+            // 3. Parser le HTML récupéré
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(htmlText, 'text/html');
+            
+            // 4. Extraire le contenu du document
+            const documentContent = doc.querySelector("#document_content");
+            if (!documentContent) {
+                this.log("Div #document_content non trouvée dans la page des conclusions");
+                return null;
+            }
+
+            // 5. Formater directement le HTML récupéré
+            const formattedText = this._formatCuriaHtml(documentContent);
+            
+            this.log("Texte des conclusions récupéré et formaté", { 
+                longueur: formattedText?.length 
+            });
+            
+            return formattedText;
+            
+        } catch (error) {
+            this.log("Erreur lors de la récupération des conclusions", error);
             return null;
         }
     }
