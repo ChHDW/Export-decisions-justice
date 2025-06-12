@@ -126,16 +126,49 @@ console.log("🚀 Extension Jurisprudence chargée !", window.location.href);
         reinitialize: initialize,
         
         // Méthodes de test
-        testExtraction: () => {
+        testExtraction: async () => {
             if (!currentExtractor) return null;
             
-            return {
-                metadata: currentExtractor.extractMetadata(),
-                decisionText: currentExtractor.extractDecisionText()?.substring(0, 200) + "...",
-                analysisText: currentExtractor.extractAnalysis()?.substring(0, 200) + "...",
-                basicRIS: currentExtractor.generateBasicRIS(),
-                validation: currentExtractor.validateExtraction()
-            };
+            try {
+                const metadata = currentExtractor.extractMetadata();
+                
+                // Gérer les méthodes asynchrones et synchrones
+                let decisionText = null;
+                let analysisText = null;
+                
+                try {
+                    const decisionResult = currentExtractor.extractDecisionText();
+                    if (decisionResult && typeof decisionResult.then === 'function') {
+                        decisionText = await decisionResult;
+                    } else {
+                        decisionText = decisionResult;
+                    }
+                } catch (error) {
+                    console.warn("Erreur extraction texte:", error);
+                }
+                
+                try {
+                    const analysisResult = currentExtractor.extractAnalysis();
+                    if (analysisResult && typeof analysisResult.then === 'function') {
+                        analysisText = await analysisResult;
+                    } else {
+                        analysisText = analysisResult;
+                    }
+                } catch (error) {
+                    console.warn("Erreur extraction analyse:", error);
+                }
+                
+                return {
+                    metadata: metadata,
+                    decisionText: decisionText?.substring(0, 200) + "...",
+                    analysisText: analysisText?.substring(0, 200) + "...",
+                    basicRIS: currentExtractor.generateBasicRIS(),
+                    validation: currentExtractor.validateExtraction()
+                };
+            } catch (error) {
+                console.error("Erreur lors du test d'extraction:", error);
+                return { error: error.message };
+            }
         }
     };
 
@@ -195,17 +228,33 @@ console.log("🚀 Extension Jurisprudence chargée !", window.location.href);
             return { success: false, message: "Extracteur non disponible" };
         }
 
-        const text = currentExtractor.extractDecisionText();
-        const formattedText = currentExtractor.formatDecisionText(text);
-        
-        if (formattedText) {
-            const success = await window.ClipboardManager.copy(formattedText);
-            return {
-                success: success,
-                message: success ? "Arrêt copié !" : "Erreur de copie"
-            };
-        } else {
-            return { success: false, message: "Impossible d'extraire l'arrêt" };
+        try {
+            // Gérer les extracteurs asynchrones et synchrones
+            const decisionResult = currentExtractor.extractDecisionText();
+            let text = null;
+            
+            if (decisionResult && typeof decisionResult.then === 'function') {
+                // Méthode asynchrone (Curia)
+                text = await decisionResult;
+            } else {
+                // Méthode synchrone (Légifrance)
+                text = decisionResult;
+            }
+            
+            const formattedText = currentExtractor.formatDecisionText(text);
+            
+            if (formattedText) {
+                const success = await window.ClipboardManager.copy(formattedText);
+                return {
+                    success: success,
+                    message: success ? "Arrêt copié !" : "Erreur de copie"
+                };
+            } else {
+                return { success: false, message: "Impossible d'extraire l'arrêt" };
+            }
+        } catch (error) {
+            console.error("Erreur lors de la copie de l'arrêt:", error);
+            return { success: false, message: "Erreur lors de l'extraction de l'arrêt" };
         }
     }
 
@@ -214,16 +263,31 @@ console.log("🚀 Extension Jurisprudence chargée !", window.location.href);
             return { success: false, message: "Extracteur non disponible" };
         }
 
-        const text = currentExtractor.extractAnalysis();
-        
-        if (text) {
-            const success = await window.ClipboardManager.copy(text);
-            return {
-                success: success,
-                message: success ? "Analyse copiée !" : "Erreur de copie"
-            };
-        } else {
-            return { success: false, message: "Impossible d'extraire l'analyse" };
+        try {
+            // Gérer les extracteurs asynchrones et synchrones
+            const analysisResult = currentExtractor.extractAnalysis();
+            let text = null;
+            
+            if (analysisResult && typeof analysisResult.then === 'function') {
+                // Méthode asynchrone
+                text = await analysisResult;
+            } else {
+                // Méthode synchrone
+                text = analysisResult;
+            }
+            
+            if (text) {
+                const success = await window.ClipboardManager.copy(text);
+                return {
+                    success: success,
+                    message: success ? "Analyse copiée !" : "Erreur de copie"
+                };
+            } else {
+                return { success: false, message: "Impossible d'extraire l'analyse" };
+            }
+        } catch (error) {
+            console.error("Erreur lors de la copie de l'analyse:", error);
+            return { success: false, message: "Erreur lors de l'extraction de l'analyse" };
         }
     }
 
@@ -232,16 +296,21 @@ console.log("🚀 Extension Jurisprudence chargée !", window.location.href);
             return { success: false, message: "Extracteur non disponible" };
         }
 
-        const ris = currentExtractor.generateBasicRIS();
-        
-        if (ris) {
-            const success = await window.ClipboardManager.copy(ris);
-            return {
-                success: success,
-                message: success ? "RIS copié !" : "Erreur de copie"
-            };
-        } else {
-            return { success: false, message: "Impossible de générer le RIS" };
+        try {
+            const ris = currentExtractor.generateBasicRIS();
+            
+            if (ris) {
+                const success = await window.ClipboardManager.copy(ris);
+                return {
+                    success: success,
+                    message: success ? "RIS copié !" : "Erreur de copie"
+                };
+            } else {
+                return { success: false, message: "Impossible de générer le RIS" };
+            }
+        } catch (error) {
+            console.error("Erreur lors de la copie du RIS:", error);
+            return { success: false, message: "Erreur lors de la génération du RIS" };
         }
     }
 
@@ -250,28 +319,43 @@ console.log("🚀 Extension Jurisprudence chargée !", window.location.href);
             return { success: false, message: "Extracteur non disponible" };
         }
 
-        const risComplete = currentExtractor.generateCompleteRIS();
-        
-        if (!risComplete) {
-            return { success: false, message: "Impossible de générer le RIS complet" };
-        }
+        try {
+            // Gérer les extracteurs asynchrones et synchrones
+            const risResult = currentExtractor.generateCompleteRIS();
+            let risComplete = null;
+            
+            if (risResult && typeof risResult.then === 'function') {
+                // Méthode asynchrone
+                risComplete = await risResult;
+            } else {
+                // Méthode synchrone
+                risComplete = risResult;
+            }
+            
+            if (!risComplete) {
+                return { success: false, message: "Impossible de générer le RIS complet" };
+            }
 
-        // Tentative d'import Zotero avec fallback vers copie
-        const result = await window.ZoteroIntegration.importWithConfirmation(risComplete);
-        
-        if (result.action === "copy" || (result.action === "imported" && !result.success)) {
-            // Fallback: copier dans le presse-papiers
-            const copySuccess = await window.ClipboardManager.copy(risComplete);
-            return {
-                success: copySuccess,
-                message: copySuccess ? result.message : "Erreur d'import et de copie"
-            };
-        } else {
-            // Import réussi ou annulé
-            return {
-                success: result.success || result.action === "cancelled",
-                message: result.message
-            };
+            // Tentative d'import Zotero avec fallback vers copie
+            const result = await window.ZoteroIntegration.importWithConfirmation(risComplete);
+            
+            if (result.action === "copy" || (result.action === "imported" && !result.success)) {
+                // Fallback: copier dans le presse-papiers
+                const copySuccess = await window.ClipboardManager.copy(risComplete);
+                return {
+                    success: copySuccess,
+                    message: copySuccess ? result.message : "Erreur d'import et de copie"
+                };
+            } else {
+                // Import réussi ou annulé
+                return {
+                    success: result.success || result.action === "cancelled",
+                    message: result.message
+                };
+            }
+        } catch (error) {
+            console.error("Erreur lors de l'import complet:", error);
+            return { success: false, message: "Erreur lors de l'import complet" };
         }
     }
 

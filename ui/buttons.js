@@ -145,18 +145,18 @@ window.ButtonManager = {
 
     // Gestionnaire: Copier la décision
     async _handleCopyDecision(extractor) {
-        const text = extractor.extractDecisionText();
-        const formattedText = extractor.formatDecisionText(text);
-        
-        if (formattedText) {
-            const success = await window.ClipboardManager.copy(formattedText);
-            window.NotificationManager[success ? "success" : "error"](
-                success ? "Arrêt copié !" : "Erreur de copie"
-            );
-        } else {
-            window.NotificationManager.error("Impossible d'extraire l'arrêt");
-        }
-    },
+    const text = await extractor.extractDecisionText();
+    const formattedText = extractor.formatDecisionText(text);
+    
+    if (formattedText) {
+        const success = await window.ClipboardManager.copy(formattedText);
+        window.NotificationManager[success ? "success" : "error"](
+            success ? "Arrêt copié !" : "Erreur de copie"
+        );
+    } else {
+        window.NotificationManager.error("Impossible d'extraire l'arrêt");
+    }
+},
 
     // Gestionnaire: Copier l'analyse
     async _handleCopyAnalysis(extractor) {
@@ -188,27 +188,27 @@ window.ButtonManager = {
 
     // Gestionnaire: Import complet
     async _handleImportComplete(extractor) {
-        const risComplete = extractor.generateCompleteRIS();
-        
-        if (!risComplete) {
-            window.NotificationManager.error("Impossible de générer le RIS complet");
-            return;
-        }
+    const risComplete = await extractor.generateCompleteRIS();
+    
+    if (!risComplete) {
+        window.NotificationManager.error("Impossible de générer le RIS complet");
+        return;
+    }
 
-        // Tentative d'import Zotero avec fallback vers copie
-        const result = await window.ZoteroIntegration.importWithConfirmation(risComplete);
-        
-        if (result.action === "copy" || (result.action === "imported" && !result.success)) {
-            // Fallback: copier dans le presse-papiers
-            const copySuccess = await window.ClipboardManager.copy(risComplete);
-            const message = copySuccess ? result.message : "Erreur d'import et de copie";
-            window.NotificationManager[copySuccess ? "warning" : "error"](message);
-        } else {
-            // Import réussi ou annulé
-            const type = result.success ? "success" : "info";
-            window.NotificationManager[type](result.message);
-        }
-    },
+    // Tentative d'import Zotero avec fallback vers copie
+    const result = await window.ZoteroIntegration.importWithConfirmation(risComplete);
+    
+    if (result.action === "copy" || (result.action === "imported" && !result.success)) {
+        // Fallback: copier dans le presse-papiers
+        const copySuccess = await window.ClipboardManager.copy(risComplete);
+        const message = copySuccess ? result.message : "Erreur d'import et de copie";
+        window.NotificationManager[copySuccess ? "warning" : "error"](message);
+    } else {
+        // Import réussi ou annulé
+        const type = result.success ? "success" : "info";
+        window.NotificationManager[type](result.message);
+    }
+},
 
     // Ajouter les boutons au container
     _addButtonsToContainer(container, buttons) {

@@ -119,10 +119,33 @@ window.BaseExtractor = class {
 }
 
 // Générer un RIS complet
-generateCompleteRIS() {
+async generateCompleteRIS() {
     const metadata = this.extractMetadata();
-    const decisionText = this.extractDecisionText();
-    const analysisText = this.extractAnalysis();
+    let decisionText = null;
+    let analysisText = null;
+    
+    try {
+        // Gérer les extracteurs asynchrones (comme Curia) et synchrones (comme Légifrance)
+        const decisionResult = this.extractDecisionText();
+        if (decisionResult && typeof decisionResult.then === 'function') {
+            // Méthode asynchrone
+            decisionText = await decisionResult;
+        } else {
+            // Méthode synchrone
+            decisionText = decisionResult;
+        }
+
+        const analysisResult = this.extractAnalysis();
+        if (analysisResult && typeof analysisResult.then === 'function') {
+            // Méthode asynchrone
+            analysisText = await analysisResult;
+        } else {
+            // Méthode synchrone
+            analysisText = analysisResult;
+        }
+    } catch (error) {
+        this.log("Erreur lors de l'extraction du contenu pour RIS complet", error);
+    }
     
     if (!metadata) return null;
     

@@ -1,4 +1,4 @@
-// Extracteur spécifique pour Curia (CJUE) - Version corrigée
+// Extracteur spécifique pour Curia (CJUE) - Version complète avec extraction automatique
 window.CuriaExtractor = class extends window.BaseExtractor {
     
     constructor() {
@@ -10,16 +10,22 @@ window.CuriaExtractor = class extends window.BaseExtractor {
     checkCompatibility() {
         const url = window.location.href;
         const isCuria = url.includes("curia.europa.eu");
-        const isListePage = url.includes("/liste.jsf") || url.includes("/document/document.jsf");
         
-        // Vérifier qu'on a au moins une affaire affichée
-        const hasCase = document.querySelector(".affaire_title") !== null ||
-                       document.querySelector(".outputEcliAff") !== null;
+        if (!isCuria) return false;
         
-        const compatible = isCuria && (isListePage && hasCase);
-        this.log("Vérification de compatibilité", { url, compatible, hasCase });
+        // Vérifier le type de page et la compatibilité
+        if (url.includes("/liste.jsf")) {
+            // Page de liste : vérifier qu'on a une affaire affichée
+            const hasCase = document.querySelector(".affaire_title") !== null ||
+                           document.querySelector(".outputEcliAff") !== null;
+            return hasCase;
+        } else if (url.includes("/document/document.jsf")) {
+            // Page de document : vérifier qu'on a le contenu du document
+            const hasDocumentContent = document.querySelector("#document_content") !== null;
+            return hasDocumentContent;
+        }
         
-        return compatible;
+        return false;
     }
 
     // Extraire les métadonnées spécifiques à Curia
@@ -29,87 +35,53 @@ window.CuriaExtractor = class extends window.BaseExtractor {
             url: this.getCurrentUrl()
         };
         
+        const url = window.location.href;
+        
         try {
-            // Extraire le titre de l'affaire (numéro + nom du requérant)
-            const affaireTitleElement = document.querySelector(".affaire_title");
-            if (affaireTitleElement) {
-                const fullTitle = affaireTitleElement.textContent.trim();
-                // Format attendu: "C-278/22 - AUTOTECHNICA FLEET SERVICES"
-                const titleParts = fullTitle.split(" - ");
-                
-                if (titleParts.length >= 2) {
-                    metadata.caseNumber = titleParts[0].trim(); // "C-278/22"
-                    metadata.caseName = titleParts[1].trim(); // "AUTOTECHNICA FLEET SERVICES"
-                    metadata.fullTitle = fullTitle;
-                }
+            if (url.includes("/liste.jsf")) {
+                return this._extractMetadataFromListPage(metadata);
+            } else if (url.includes("/document/document.jsf")) {
+                return this._extractMetadataFromDocumentPage(metadata);
             }
-
-            // Extraire les informations de la décision
-            const decisionTitleElement = document.querySelector(".decision_title");
-            if (decisionTitleElement) {
-                const decisionText = decisionTitleElement.textContent.trim();
-                
-                // Extraire le type de document (Arrêt, Conclusions, etc.)
-                const docTypeMatch = decisionText.match(/^(Arrêt|Conclusions|Ordonnance)/);
-                if (docTypeMatch) {
-                    metadata.documentType = docTypeMatch[1];
-                }
-                
-                // Extraire la date (format: "21/12/2023")
-                const dateMatch = decisionText.match(/(\d{1,2}\/\d{1,2}\/\d{4})/);
-                if (dateMatch) {
-                    const dateParts = dateMatch[1].split("/");
-                    metadata.date = dateMatch[1];
-                    metadata.year = dateParts[2];
-                    // Convertir au format RIS (YYYY/MM/DD)
-                    metadata.dateRIS = `${dateParts[2]}/${dateParts[1].padStart(2, '0')}/${dateParts[0].padStart(2, '0')}`;
-                }
-
-                // 🚀 NOUVELLE FONCTIONNALITÉ : Extraire le titre depuis decision_title
-                // Pattern: "[Type] - [Date] - [Titre]"
-                const titleAfterDateMatch = decisionText.match(/\d{1,2}\/\d{1,2}\/\d{4}\s*-\s*(.+)$/);
-                if (titleAfterDateMatch) {
-                    const decisionTitle = titleAfterDateMatch[1].trim();
-                    metadata.decisionTitle = decisionTitle;
-                    
-                    // Si on n'a pas encore de caseName, utiliser le titre de la décision
-                    if (!metadata.caseName && decisionTitle) {
-                        metadata.caseName = decisionTitle;
-                    }
-                }
-            }
-
-            // Extraire l'ECLI
-            const ecliElement = document.querySelector(".outputEcliAff");
-            if (ecliElement) {
-                metadata.ecli = ecliElement.textContent.trim();
-            }
-
-            // Déterminer la juridiction à partir du numéro d'affaire
-            if (metadata.caseNumber) {
-                metadata.court = this.determineCourtFromCaseNumber(metadata.caseNumber);
-                metadata.number = `aff. ${metadata.caseNumber}`;
-            }
-
-            // 🌟 NOUVELLE FONCTIONNALITÉ : Extraire l'URL EUR-Lex
-            metadata.eurLexUrl = this.extractEurLexUrl(metadata.documentType);
             
-            // Utiliser l'URL EUR-Lex comme URL principale si disponible
-            if (metadata.eurLexUrl) {
-                metadata.url = metadata.eurLexUrl;
-                metadata.originalCuriaUrl = this.getCurrentUrl();
-            }
-
-            // Extraire les liens vers les documents
-            metadata.documentLinks = this.extractDocumentLinks();
-
-            this.log("Métadonnées extraites", metadata);
+            this.log("Type de page non reconnu pour l'extraction de métadonnées");
             return metadata;
             
         } catch (error) {
             this.log("Erreur lors de l'extraction des métadonnées", error);
             return null;
         }
+    }
+
+    // Extraire le texte de la décision
+    async extractDecisionText() {
+        const url = window.location.href;
+        
+        if (url.includes("/document/document.jsf")) {
+            // Page de document : extraire le texte directement
+            return this._extractTextFromDocumentPage();
+        } else if (url.includes("/liste.jsf")) {
+            // Page de liste : récupérer le texte depuis la page de document
+            return await this._fetchAndExtractTextFromList();
+        }
+        
+        return null;
+    }
+
+    // Extraire l'analyse (pour l'instant non supportée)
+    extractAnalysis() {
+        const url = window.location.href;
+        
+        if (url.includes("/document/document.jsf")) {
+            // TODO: Implémenter l'extraction d'analyse si disponible sur les pages de document
+            this.log("Extraction de l'analyse non encore implémentée sur les pages de document");
+            return null;
+        } else if (url.includes("/liste.jsf")) {
+            this.log("Extraction de l'analyse non disponible sur la page de liste");
+            return null;
+        }
+        
+        return null;
     }
 
     // Déterminer la juridiction à partir du numéro d'affaire
@@ -169,7 +141,7 @@ window.CuriaExtractor = class extends window.BaseExtractor {
         return links;
     }
 
-    // 🌟 NOUVELLE MÉTHODE : Extraire l'URL EUR-Lex selon le type de document
+    // Extraire l'URL EUR-Lex selon le type de document
     extractEurLexUrl(documentType = "Arrêt") {
         try {
             // Chercher le bon lien EUR-Lex selon le type de document affiché
@@ -300,25 +272,138 @@ window.CuriaExtractor = class extends window.BaseExtractor {
         return new URL(relativeUrl, window.location.origin).href;
     }
 
-    // Pour l'instant, retourner null car on est sur une page de liste
-    // Plus tard, on pourra implémenter l'extraction en suivant les liens
-    extractDecisionText() {
-        this.log("Extraction du texte de décision non implémentée sur la page de liste");
-        return null;
-    }
-
-    // Pour l'instant, retourner null car on est sur une page de liste
-    extractAnalysis() {
-        this.log("Extraction de l'analyse non implémentée sur la page de liste");
-        return null;
-    }
-
-    // 🚀 NOUVELLE MÉTHODE : Générer un RIS spécialisé pour Curia
+    // Générer un RIS spécialisé pour Curia
     generateBasicRIS() {
         const metadata = this.extractMetadata();
         if (!metadata) return null;
         
         return window.RISGenerator.generateCuriaRIS(metadata);
+    }
+
+    // Formatage spécialisé pour les arrêts de Curia basé sur les classes CSS
+    formatDecisionText(rawText) {
+        if (!rawText) return null;
+
+        // Si le texte contient déjà des sauts de ligne appropriés, le retourner tel quel
+        if (rawText.includes('\n\n') && rawText.split('\n\n').length > 5) {
+            this.log("Texte déjà formaté, retour tel quel");
+            return rawText;
+        }
+
+        try {
+            // Si on est sur une page de document, récupérer le HTML
+            const documentContent = document.querySelector("#document_content");
+            if (documentContent) {
+                return this._formatCuriaHtml(documentContent);
+            }
+            
+            // Fallback au texte brut nettoyé
+            return window.DOMHelpers.cleanText(rawText);
+            
+        } catch (error) {
+            this.log("Erreur lors du formatage HTML, utilisation du texte brut", error);
+            return window.DOMHelpers.cleanText(rawText);
+        }
+    }
+
+    // Formatter le HTML de Curia selon les classes CSS
+    _formatCuriaHtml(documentContent) {
+        let formattedText = "";
+        
+        // Parcourir tous les éléments <p> et autres dans l'ordre
+        const elements = documentContent.querySelectorAll('p, h1, h2, h3, div');
+        
+        elements.forEach((element, index) => {
+            const className = element.className;
+            const text = element.textContent.trim();
+            
+            if (!text) return; // Ignorer les éléments vides
+            
+            // Ajouter le formatage selon la classe CSS
+            switch (className) {
+                case 'C19Centre':
+                    // Titres centrés (ARRÊT DE LA COUR, date)
+                    formattedText += (index > 0 ? '\n\n' : '') + text + '\n\n';
+                    break;
+                    
+                case 'C71Indicateur':
+                    // Mots-clés entre guillemets
+                    formattedText += text + '\n\n';
+                    break;
+                    
+                case 'C01PointnumeroteAltN':
+                    // Paragraphes numérotés (1, 2, 3...)
+                    formattedText += '\n\n' + text;
+                    break;
+                    
+                case 'C02AlineaAltA':
+                    // Paragraphes normaux
+                    formattedText += '\n\n' + text;
+                    break;
+                    
+                case 'C04Titre1':
+                    // Titres de niveau 1 (Le cadre juridique)
+                    formattedText += '\n\n ' + text + '\n\n';
+                    break;
+                    
+                case 'C05Titre2':
+                    // Sous-titres (Le droit de l'Union)
+                    formattedText += '\n\n ' + text + '\n\n';
+                    break;
+                    
+                case 'C06Titre3':
+                    // Sous-sous-titres (La directive 2006/123)
+                    formattedText += '\n\n ' + text + '\n\n';
+                    break;
+                    
+                case 'C03Tiretlong':
+                    // Listes à puces
+                    formattedText += '\n\n' + text;
+                    break;
+                    
+                case 'C09Marge0avecretrait':
+                    // Citations indentées
+                    formattedText += '\n\n' + text;
+                    break;
+                    
+                case 'C75Debutdesmotifs':
+                    // "Arrêt"
+                    formattedText += '\n\n' + text + '\n\n';
+                    break;
+                    
+                case 'C08Dispositif':
+                case 'C32Dispositifmarge1':
+                case 'C34Dispositifmarge1avectiretlong':
+                case 'C41DispositifIntroduction':
+                    // Dispositif final
+                    formattedText += '\n\n' + text;
+                    break;
+                    
+                case 'C77Signatures':
+                    // Signatures
+                    formattedText += '\n\n' + text + '\n\n';
+                    break;
+                    
+                case 'C42FootnoteLangue':
+                    // Notes de bas de page
+                    formattedText += '\n\n' + text;
+                    break;
+                    
+                default:
+                    // Classes non reconnues - ajouter comme paragraphe normal
+                    if (text.length > 10) { // Ignorer les très courts textes
+                        formattedText += '\n\n' + text;
+                    }
+                    break;
+            }
+        });
+        
+        // Nettoyer le résultat final
+        formattedText = formattedText
+            .replace(/\n{3,}/g, '\n\n')  // Maximum 2 sauts de ligne consécutifs
+            .trim();
+        
+        return formattedText;
     }
 
     // Méthodes spécifiques à Curia
@@ -366,10 +451,286 @@ window.CuriaExtractor = class extends window.BaseExtractor {
         };
     }
 
-    // 🚀 MÉTHODE DE DEBUG : Afficher toutes les métadonnées extraites
+    // Méthode de debug : Afficher toutes les métadonnées extraites
     debugExtraction() {
         const metadata = this.extractMetadata();
         console.table(metadata);
         return metadata;
+    }
+
+    // ===== MÉTHODES PRIVÉES =====
+
+    // Extraire les métadonnées depuis une page de liste
+    _extractMetadataFromListPage(metadata) {
+        // Extraire le titre de l'affaire (numéro + nom du requérant)
+        const affaireTitleElement = document.querySelector(".affaire_title");
+        if (affaireTitleElement) {
+            const fullTitle = affaireTitleElement.textContent.trim();
+            // Format attendu: "C-278/22 - AUTOTECHNICA FLEET SERVICES"
+            const titleParts = fullTitle.split(" - ");
+            
+            if (titleParts.length >= 2) {
+                metadata.caseNumber = titleParts[0].trim(); // "C-278/22"
+                metadata.caseName = titleParts[1].trim(); // "AUTOTECHNICA FLEET SERVICES"
+                metadata.fullTitle = fullTitle;
+            }
+        }
+
+        // Extraire les informations de la décision
+        const decisionTitleElement = document.querySelector(".decision_title");
+        if (decisionTitleElement) {
+            const decisionText = decisionTitleElement.textContent.trim();
+            
+            // Extraire le type de document (Arrêt, Conclusions, etc.)
+            const docTypeMatch = decisionText.match(/^(Arrêt|Conclusions|Ordonnance)/);
+            if (docTypeMatch) {
+                metadata.documentType = docTypeMatch[1];
+            }
+            
+            // Extraire la date (format: "21/12/2023")
+            const dateMatch = decisionText.match(/(\d{1,2}\/\d{1,2}\/\d{4})/);
+            if (dateMatch) {
+                const dateParts = dateMatch[1].split("/");
+                metadata.date = dateMatch[1];
+                metadata.year = dateParts[2];
+                // Convertir au format RIS (YYYY/MM/DD)
+                metadata.dateRIS = `${dateParts[2]}/${dateParts[1].padStart(2, '0')}/${dateParts[0].padStart(2, '0')}`;
+            }
+
+            // Extraire le titre depuis decision_title
+            // Pattern: "[Type] - [Date] - [Titre]"
+            const titleAfterDateMatch = decisionText.match(/\d{1,2}\/\d{1,2}\/\d{4}\s*-\s*(.+)$/);
+            if (titleAfterDateMatch) {
+                const decisionTitle = titleAfterDateMatch[1].trim();
+                metadata.decisionTitle = decisionTitle;
+                
+                // Si on n'a pas encore de caseName, utiliser le titre de la décision
+                if (!metadata.caseName && decisionTitle) {
+                    metadata.caseName = decisionTitle;
+                }
+            }
+        }
+
+        // Extraire l'ECLI
+        const ecliElement = document.querySelector(".outputEcliAff");
+        if (ecliElement) {
+            metadata.ecli = ecliElement.textContent.trim();
+        }
+
+        // Déterminer la juridiction à partir du numéro d'affaire
+        if (metadata.caseNumber) {
+            metadata.court = this.determineCourtFromCaseNumber(metadata.caseNumber);
+            metadata.number = `aff. ${metadata.caseNumber}`;
+        }
+
+        // Extraire l'URL EUR-Lex
+        metadata.eurLexUrl = this.extractEurLexUrl(metadata.documentType);
+        
+        // Utiliser l'URL EUR-Lex comme URL principale si disponible
+        if (metadata.eurLexUrl) {
+            metadata.url = metadata.eurLexUrl;
+            metadata.originalCuriaUrl = this.getCurrentUrl();
+        }
+
+        // Extraire les liens vers les documents
+        metadata.documentLinks = this.extractDocumentLinks();
+
+        this.log("Métadonnées extraites depuis la page de liste", metadata);
+        return metadata;
+    }
+
+    // Extraire les métadonnées depuis une page de document
+    _extractMetadataFromDocumentPage(metadata) {
+        // Sur une page de document, l'ECLI est visible
+        const ecliElement = document.querySelector(".outputEcli");
+        if (ecliElement) {
+            metadata.ecli = ecliElement.textContent.trim();
+        }
+
+        // Extraire les informations depuis le contenu du document
+        const documentContent = document.querySelector("#document_content");
+        if (documentContent) {
+            // Extraire le texte directement depuis le contenu (pas de balise BODY)
+            const bodyText = documentContent.textContent || documentContent.innerText || "";
+            
+            // Chercher le titre de l'affaire dans le contenu
+            // Format typique : "Dans l'affaire C‑278/22,"
+            const caseMatch = bodyText.match(/Dans l'affaire\s+([CTF]‑\d+\/\d+)/i);
+            if (caseMatch) {
+                metadata.caseNumber = caseMatch[1].replace('‑', '-'); // Remplacer le tiret long par tiret normal
+                metadata.number = `aff. ${metadata.caseNumber}`;
+                metadata.court = this.determineCourtFromCaseNumber(metadata.caseNumber);
+            }
+
+            // Chercher le nom du requérant/demandeur
+            // Format typique : "AUTOTECHNICA FLEET SERVICES d.o.o.,"
+            const nameMatch = bodyText.match(/\*\*([A-Z\s]+[a-z\.]*)\*\*/);
+            if (nameMatch) {
+                metadata.caseName = nameMatch[1].trim();
+            } else {
+                // Fallback : chercher dans les balises <b> ou dans le texte après "Dans l'affaire"
+                const boldElements = documentContent.querySelectorAll('b');
+                for (const bold of boldElements) {
+                    const text = bold.textContent.trim();
+                    if (text && text.length > 5 && text.toUpperCase() === text && !text.includes('COUR')) {
+                        metadata.caseName = text.replace(/,$/, ''); // Enlever la virgule de fin
+                        break;
+                    }
+                }
+            }
+
+            // Chercher la date dans le titre
+            // Format typique : "21 décembre 2023"
+            const dateMatch = bodyText.match(/(\d{1,2})\s+(janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)\s+(\d{4})/i);
+            if (dateMatch) {
+                const day = dateMatch[1];
+                const month = dateMatch[2];
+                const year = dateMatch[3];
+                
+                metadata.date = `${day} ${month} ${year}`;
+                metadata.year = year;
+                
+                // Convertir le mois en numéro pour le format RIS
+                const monthMap = {
+                    'janvier': '01', 'février': '02', 'mars': '03', 'avril': '04',
+                    'mai': '05', 'juin': '06', 'juillet': '07', 'août': '08',
+                    'septembre': '09', 'octobre': '10', 'novembre': '11', 'décembre': '12'
+                };
+                const monthNum = monthMap[month.toLowerCase()];
+                if (monthNum) {
+                    metadata.dateRIS = `${year}/${monthNum}/${day.padStart(2, '0')}`;
+                }
+            }
+
+            // Déterminer le type de document
+            if (bodyText.includes("ARRÊT DE LA COUR")) {
+                metadata.documentType = "Arrêt";
+            } else if (bodyText.includes("CONCLUSIONS")) {
+                metadata.documentType = "Conclusions";
+            } else if (bodyText.includes("ORDONNANCE")) {
+                metadata.documentType = "Ordonnance";
+            }
+        }
+
+        // Construire l'URL EUR-Lex si on a les informations nécessaires
+        if (metadata.caseNumber && metadata.year) {
+            metadata.eurLexUrl = this.constructEurLexUrl(metadata.documentType);
+            if (metadata.eurLexUrl) {
+                metadata.url = metadata.eurLexUrl;
+                metadata.originalCuriaUrl = this.getCurrentUrl();
+            }
+        }
+
+        this.log("Métadonnées extraites depuis la page de document", metadata);
+        return metadata;
+    }
+
+    // Extraire le texte depuis une page de document Curia
+    _extractTextFromDocumentPage() {
+        try {
+            const documentContent = document.querySelector("#document_content");
+            if (!documentContent) {
+                this.log("Div #document_content non trouvée");
+                return null;
+            }
+
+            // Formater directement le HTML de la page courante
+            const formattedText = this._formatCuriaHtml(documentContent);
+            
+            this.log("Texte de décision extrait et formaté depuis la page de document", { 
+                longueur: formattedText?.length 
+            });
+            
+            return formattedText;
+            
+        } catch (error) {
+            this.log("Erreur lors de l'extraction du texte de décision", error);
+            return null;
+        }
+    }
+
+    // Récupérer et extraire le texte depuis la page de liste (fetch externe)
+    async _fetchAndExtractTextFromList() {
+        try {
+            // 1. Trouver le lien vers l'arrêt
+            const judgmentUrl = this._findJudgmentUrl();
+            if (!judgmentUrl) {
+                this.log("URL de l'arrêt non trouvée dans la page de liste");
+                return null;
+            }
+
+            this.log("URL de l'arrêt trouvée", judgmentUrl);
+
+            // 2. Récupérer le contenu de la page de l'arrêt
+            const response = await fetch(judgmentUrl);
+            if (!response.ok) {
+                this.log("Erreur lors de la récupération de la page de l'arrêt", response.status);
+                return null;
+            }
+
+            const htmlText = await response.text();
+            
+            // 3. Parser le HTML récupéré
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(htmlText, 'text/html');
+            
+            // 4. Extraire le contenu du document
+            const documentContent = doc.querySelector("#document_content");
+            if (!documentContent) {
+                this.log("Div #document_content non trouvée dans la page récupérée");
+                return null;
+            }
+
+            // 5. Formater directement le HTML récupéré
+            const formattedText = this._formatCuriaHtml(documentContent);
+            
+            this.log("Texte de décision récupéré et formaté depuis la page distante", { 
+                longueur: formattedText?.length 
+            });
+            
+            return formattedText;
+            
+        } catch (error) {
+            this.log("Erreur lors de la récupération du texte depuis la page de liste", error);
+            return null;
+        }
+    }
+
+    // Trouver l'URL de l'arrêt depuis la page de liste
+    _findJudgmentUrl() {
+        try {
+            // Chercher la ligne qui contient "Arrêt" dans le tableau des documents
+            const documentRows = document.querySelectorAll(".table_document_ligne");
+            
+            for (const row of documentRows) {
+                const cellDoc = row.querySelector(".liste_table_cell_doc");
+                if (cellDoc && cellDoc.textContent.includes("Arrêt")) {
+                    // Trouvé la ligne de l'arrêt, chercher le lien dans la cellule Curia
+                    const cellLinks = row.querySelector(".liste_table_cell_links_curia");
+                    if (cellLinks) {
+                        const link = cellLinks.querySelector("a[href*='document/document.jsf']");
+                        if (link) {
+                            let href = link.getAttribute("href");
+                            
+                            // Convertir les entités HTML (&amp; → &)
+                            href = href.replace(/&amp;/g, '&');
+                            
+                            // Construire l'URL absolue si nécessaire
+                            if (href.startsWith("https://")) {
+                                return href;
+                            } else {
+                                return new URL(href, window.location.origin).href;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            return null;
+            
+        } catch (error) {
+            this.log("Erreur lors de la recherche de l'URL de l'arrêt", error);
+            return null;
+        }
     }
 };
